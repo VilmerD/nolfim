@@ -171,7 +171,7 @@ classdef NLContModel_opt < handle
             Jt = kron((1:obj.nelm)', ones(2*obj.element.npoints, 1));
             X = zeros(size(It));
             
-            dx = full(diag(obj.stiffness_penalization.backward(x)));
+            dx = full(obj.stiffness_penalization.backward(x));
             for elm = 1:obj.nelm
                 % Computes the defgrad
                 efelm = ef{elm};
