@@ -87,7 +87,7 @@ classdef NLContModel_opt < handle
         % ----------------------------------------------------------------%
         
         % stresses and strains
-        function [ef, es] = defrom(obj, ed)
+        function [ef, es] = deform(obj, ed)
             ef = cell(obj.nelm, 1);
             es = cell(obj.nelm, 1);
             edelms = ed(obj.edof(:, 2:end))';
