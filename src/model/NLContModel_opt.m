@@ -197,7 +197,7 @@ classdef NLContModel_opt < handle
                 material, bc, F);
             
             % Thresholding
-            model.thresholding = HeavisideProjection(threshpara);
+            model.thresholding = HeavisideProjection(threshpara{:});
             
             % Filter
             model.filter = DensityFilter(ex, ey, model.volumes(), ...
@@ -206,7 +206,7 @@ classdef NLContModel_opt < handle
             
             % Penalization
             xmin = 1e-4;
-            model.stiffness_penalization = SIMPFilter(xmin, 3);
+            model.stiffness_penalization = SIMP(xmin, 3);
         end
     end
 end
