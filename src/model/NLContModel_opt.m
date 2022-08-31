@@ -1,16 +1,19 @@
 classdef NLContModel_opt < handle
     properties
         % Setting up geometry
-        nelm;
-        edof;
-        ndof;
-        ec;
-        ex;
-        ey;
+        nelm;                   % Number of elements
+        edof;                   % Element-dof matrix
+        ndof;                   % Number of degrees of freedom
+        ec;                     % Element coordinates
+        ex;                     % Element x-coords
+        ey;                     % Element y-coords
         
         % Problem parameters
-        bc;
-        f;
+        bc;                     % Boundary conditions
+        np;                     % Prescribed nodes
+        nf;                     % Free nodes
+        
+        f;                      % Load vector
         
         % Preallocation
         I;
@@ -20,21 +23,14 @@ classdef NLContModel_opt < handle
         matrices;
         
         % Material variables
-        material;
-        t = 1;
+        material;               % Material
+        t = 1;                  % Thickness
         
         % Element
-        element
+        element                 % Element type
         
         % Penalization
-        stiffness_penalization;
-        
-        % Thresholding
-        thresholding;
-        
-        % Filter
-        filter;
-        density_filter;
+        stiffness_penal;        % Stiffness penalization (SIMP ususally)
     end
     
     methods
@@ -56,6 +52,11 @@ classdef NLContModel_opt < handle
             obj.material = material;
             
             obj.bc = bc;
+            obj.np = bc(:, 1);
+            nf = (1:obj.ndof)';
+            nf(obj.np) = [];
+            obj.nf = nf;
+            
             obj.f = f;
         end
         
@@ -102,7 +103,7 @@ classdef NLContModel_opt < handle
         function f = fint(obj, ef, es, x)
             f = zeros(obj.ndof, 1);
             
-            xp = obj.stiffness_penalization.forward(x);
+            xp = obj.stiffness_penal.forward(x);
             for elm = 1:obj.nelm
                 % Extract stresses
                 efelm = ef{elm};
@@ -113,7 +114,7 @@ classdef NLContModel_opt < handle
                 felm = xp(elm)*obj.element.force(obj.matrices{elm, 2}, ...
                     obj.matrices{elm, 3}, obj.matrices{elm, 1}, obj.t, ...
                     efelm, eselm);
-                % TODO: Fix this horrible indexing to sparse format
+                
                 dofs = obj.edof(elm, 2:end)';
                 f(dofs) = f(dofs) + felm;
             end
@@ -124,7 +125,7 @@ classdef NLContModel_opt < handle
             nne = (2*obj.element.npoints)^2;
             X = zeros(obj.nelm*nne, 1);
             
-            xp = obj.stiffness_penalization.forward(x);
+            xp = obj.stiffness_penal.forward(x);
             for elm = 1:obj.nelm
                 % Extract stresses
                 efelm = ef{elm};
@@ -146,6 +147,30 @@ classdef NLContModel_opt < handle
             K = sparse(obj.I, obj.J, X);
         end
         
+        % Computes the sensitivity of the residual
+        function y = drdE(obj, ef, es, x)
+            nne = (obj.element.npoints*2);
+            It = reshape(obj.edof(:, 2:end)', [], 1);
+            Jt = kron((1:obj.nelm)', ones(2*obj.element.npoints, 1));
+            X = zeros(size(It));
+            
+            dxp = obj.stiffness_penal.backward(x);
+            for elm = 1:obj.nelm
+                % Computes the defgrad
+                efelm = ef{elm};
+                eselm = es{elm};
+                
+                % Using the above data the element forces can be computed
+                felm = obj.element.force(obj.matrices{elm, 2}, ...
+                    obj.matrices{elm, 3}, obj.matrices{elm, 1}, obj.t, ...
+                    efelm, eselm);
+                
+                k0 = (elm - 1)*nne + 1; ke = k0 + nne - 1;
+                X(k0:ke, 1) = dxp(elm)*felm;
+            end
+            y = sparse(It, Jt, X);
+        end
+        
         % computes the von-stress for the plane strain problem
         function S = stresses(obj, ed)
             S = zeros(obj.nelm, 1);
@@ -163,50 +188,13 @@ classdef NLContModel_opt < handle
             end
             
         end
-        
-        % Computes the sensitivity of the residual
-        function y = drdE(obj, ef, es, x)
-            nne = (obj.element.npoints*2);
-            It = reshape(obj.edof(:, 2:end)', [], 1);
-            Jt = kron((1:obj.nelm)', ones(2*obj.element.npoints, 1));
-            X = zeros(size(It));
-            
-            dx = full(obj.stiffness_penalization.backward(x));
-            for elm = 1:obj.nelm
-                % Computes the defgrad
-                efelm = ef{elm};
-                eselm = es{elm};
-                
-                % Using the above data the element forces can be computed
-                felm = obj.element.force(obj.matrices{elm, 2}, ...
-                    obj.matrices{elm, 3}, obj.matrices{elm, 1}, obj.t, ...
-                    efelm, eselm);
-                
-                k0 = (elm - 1)*nne + 1; ke = k0 + nne - 1;
-                X(k0:ke, 1) = dx(elm)*felm;
-            end
-            y = sparse(It, Jt, X);
-        end
     end
     
     methods (Static)
-        function model = makeModel(geomfile, t, element, material, ...
-                threshpara, filterpara)
+        function model = makeModel(geomfile, t, element, material)
             load(geomfile, 'ex', 'ey', 'edof', 'bc', 'F');
             model = NLContModel_opt(ex, ey, edof, t, element, ...
                 material, bc, F);
-            
-            % Thresholding
-            model.thresholding = HeavisideProjection(threshpara{:});
-            
-            % Filter
-            model.filter = DensityFilter(ex, ey, model.volumes(), ...
-                filterpara{:});
-            model.density_filter = model.thresholding*model.filter;
-            
-            % Penalization
-            xmin = 1e-4;
-            model.stiffness_penalization = SIMP(xmin, 3);
         end
     end
 end
